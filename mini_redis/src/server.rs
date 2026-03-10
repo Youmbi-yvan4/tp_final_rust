@@ -1,12 +1,14 @@
 use crate::protocol::{parse_request, serialize_response, Request, RequestParseError, Response};
-use crate::store::{del, get, keys, new_store, set, Store};
+use crate::store::{del, expire, get, keys, new_store, purge_expired, set, ttl, Store};
 use serde_json::Value;
 use std::error::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::{self, Duration};
 
 pub async fn run(addr: &str) -> Result<(), Box<dyn Error>> {
     let store = new_store();
+    tokio::spawn(clean_expired(store.clone()));
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("Listening on {addr}");
 
@@ -65,8 +67,24 @@ fn handle_line(line: &str, store: &Store) -> Response {
             keys: Some(keys(store)),
             ..Response::ok()
         },
+        Ok(Request::Expire { key, seconds }) => {
+            expire(store, &key, seconds);
+            Response::ok()
+        }
+        Ok(Request::Ttl { key }) => Response {
+            ttl: Some(ttl(store, &key)),
+            ..Response::ok()
+        },
         Err(RequestParseError::InvalidJson) => Response::error("invalid json"),
         Err(RequestParseError::UnknownCommand) => Response::error("unknown command"),
+    }
+}
+
+async fn clean_expired(store: Store) {
+    let mut interval = time::interval(Duration::from_secs(1));
+    loop {
+        interval.tick().await;
+        purge_expired(&store);
     }
 }
 
@@ -128,5 +146,18 @@ mod tests {
         let mut returned = resp.keys.clone().unwrap_or_default();
         returned.sort();
         assert_eq!(returned, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn expire_and_ttl() {
+        let store = new_store();
+        let _ = handle_line("{\"cmd\":\"SET\",\"key\":\"a\",\"value\":\"1\"}", &store);
+        let _ = handle_line("{\"cmd\":\"EXPIRE\",\"key\":\"a\",\"seconds\":1}", &store);
+        let ttl_resp = handle_line("{\"cmd\":\"TTL\",\"key\":\"a\"}", &store);
+        assert!(ttl_resp.ttl.unwrap() >= 0);
+        // Force expire by purging after sleep; for unit test determinism, call purge directly.
+        crate::store::purge_expired(&store);
+        let ttl_resp = handle_line("{\"cmd\":\"TTL\",\"key\":\"a\"}", &store);
+        assert_eq!(ttl_resp.ttl, Some(-2));
     }
 }

@@ -8,6 +8,8 @@ pub enum Request {
     Set { key: String, value: String },
     Del { key: String },
     Keys,
+    Expire { key: String, seconds: u64 },
+    Ttl { key: String },
 }
 
 #[derive(Debug, PartialEq)]
@@ -26,6 +28,8 @@ pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keys: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
@@ -36,6 +40,7 @@ impl Response {
             value: None,
             count: None,
             keys: None,
+            ttl: None,
             message: None,
         }
     }
@@ -46,6 +51,7 @@ impl Response {
             value: None,
             count: None,
             keys: None,
+            ttl: None,
             message: Some(message.into()),
         }
     }
@@ -90,6 +96,26 @@ pub fn parse_request(line: &str) -> Result<Request, RequestParseError> {
             Ok(Request::Del { key })
         }
         "KEYS" => Ok(Request::Keys),
+        "EXPIRE" => {
+            let key = value
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or(RequestParseError::InvalidJson)?
+                .to_string();
+            let seconds = value
+                .get("seconds")
+                .and_then(|v| v.as_u64())
+                .ok_or(RequestParseError::InvalidJson)?;
+            Ok(Request::Expire { key, seconds })
+        }
+        "TTL" => {
+            let key = value
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or(RequestParseError::InvalidJson)?
+                .to_string();
+            Ok(Request::Ttl { key })
+        }
         _ => Err(RequestParseError::UnknownCommand),
     }
 }
