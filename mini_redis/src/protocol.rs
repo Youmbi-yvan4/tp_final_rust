@@ -4,6 +4,9 @@ use serde_json::Value;
 #[derive(Debug, PartialEq)]
 pub enum Request {
     Ping,
+    Get { key: String },
+    Set { key: String, value: String },
+    Del { key: String },
 }
 
 #[derive(Debug, PartialEq)]
@@ -16,6 +19,10 @@ pub enum RequestParseError {
 pub struct Response {
     pub status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
@@ -23,6 +30,8 @@ impl Response {
     pub fn ok() -> Self {
         Self {
             status: "ok",
+            value: None,
+            count: None,
             message: None,
         }
     }
@@ -30,6 +39,8 @@ impl Response {
     pub fn error(message: impl Into<String>) -> Self {
         Self {
             status: "error",
+            value: None,
+            count: None,
             message: Some(message.into()),
         }
     }
@@ -44,6 +55,35 @@ pub fn parse_request(line: &str) -> Result<Request, RequestParseError> {
 
     match cmd {
         "PING" => Ok(Request::Ping),
+        "GET" => {
+            let key = value
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or(RequestParseError::InvalidJson)?
+                .to_string();
+            Ok(Request::Get { key })
+        }
+        "SET" => {
+            let key = value
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or(RequestParseError::InvalidJson)?
+                .to_string();
+            let value = value
+                .get("value")
+                .and_then(|v| v.as_str())
+                .ok_or(RequestParseError::InvalidJson)?
+                .to_string();
+            Ok(Request::Set { key, value })
+        }
+        "DEL" => {
+            let key = value
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or(RequestParseError::InvalidJson)?
+                .to_string();
+            Ok(Request::Del { key })
+        }
         _ => Err(RequestParseError::UnknownCommand),
     }
 }
