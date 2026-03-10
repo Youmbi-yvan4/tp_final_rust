@@ -44,6 +44,27 @@ pub fn keys(store: &Store) -> Vec<String> {
     guard.keys().cloned().collect()
 }
 
+pub fn incr(store: &Store, key: &str, delta: i64) -> Result<i64, &'static str> {
+    let mut guard = store.lock().expect("store poisoned");
+    purge_expired_locked(&mut guard);
+
+    let (current_str, expires_at) = match guard.remove(key) {
+        Some(entry) => (entry.value, entry.expires_at),
+        None => ("0".to_string(), None),
+    };
+
+    let current_val: i64 = current_str.parse().map_err(|_| "not an integer")?;
+    let new_val = current_val.saturating_add(delta);
+    guard.insert(
+        key.to_string(),
+        Entry {
+            value: new_val.to_string(),
+            expires_at,
+        },
+    );
+    Ok(new_val)
+}
+
 pub fn expire(store: &Store, key: &str, seconds: u64) {
     let mut guard = store.lock().expect("store poisoned");
     purge_expired_locked(&mut guard);

@@ -10,6 +10,8 @@ pub enum Request {
     Keys,
     Expire { key: String, seconds: u64 },
     Ttl { key: String },
+    Incr { key: String },
+    Decr { key: String },
 }
 
 #[derive(Debug, PartialEq)]
@@ -115,6 +117,22 @@ pub fn parse_request(line: &str) -> Result<Request, RequestParseError> {
                 .ok_or(RequestParseError::InvalidJson)?
                 .to_string();
             Ok(Request::Ttl { key })
+        }
+        "INCR" => {
+            let key = value
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or(RequestParseError::InvalidJson)?
+                .to_string();
+            Ok(Request::Incr { key })
+        }
+        "DECR" => {
+            let key = value
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or(RequestParseError::InvalidJson)?
+                .to_string();
+            Ok(Request::Decr { key })
         }
         _ => Err(RequestParseError::UnknownCommand),
     }

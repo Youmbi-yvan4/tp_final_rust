@@ -1,5 +1,5 @@
 use crate::protocol::{parse_request, serialize_response, Request, RequestParseError, Response};
-use crate::store::{del, expire, get, keys, new_store, purge_expired, set, ttl, Store};
+use crate::store::{del, expire, get, incr, keys, new_store, purge_expired, set, ttl, Store};
 use serde_json::Value;
 use std::error::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -74,6 +74,20 @@ fn handle_line(line: &str, store: &Store) -> Response {
         Ok(Request::Ttl { key }) => Response {
             ttl: Some(ttl(store, &key)),
             ..Response::ok()
+        },
+        Ok(Request::Incr { key }) => match incr(store, &key, 1) {
+            Ok(val) => Response {
+                value: Some(Value::Number(val.into())),
+                ..Response::ok()
+            },
+            Err(msg) => Response::error(msg),
+        },
+        Ok(Request::Decr { key }) => match incr(store, &key, -1) {
+            Ok(val) => Response {
+                value: Some(Value::Number(val.into())),
+                ..Response::ok()
+            },
+            Err(msg) => Response::error(msg),
         },
         Err(RequestParseError::InvalidJson) => Response::error("invalid json"),
         Err(RequestParseError::UnknownCommand) => Response::error("unknown command"),
@@ -150,14 +164,41 @@ mod tests {
 
     #[test]
     fn expire_and_ttl() {
+        use std::time::{Duration, Instant};
+
         let store = new_store();
         let _ = handle_line("{\"cmd\":\"SET\",\"key\":\"a\",\"value\":\"1\"}", &store);
         let _ = handle_line("{\"cmd\":\"EXPIRE\",\"key\":\"a\",\"seconds\":1}", &store);
         let ttl_resp = handle_line("{\"cmd\":\"TTL\",\"key\":\"a\"}", &store);
         assert!(ttl_resp.ttl.unwrap() >= 0);
-        // Force expire by purging after sleep; for unit test determinism, call purge directly.
+
+        // Simulate passage of time deterministically by forcing expiration instant to past, then purging.
+        {
+            let mut guard = store.lock().unwrap();
+            if let Some(entry) = guard.get_mut("a") {
+                entry.expires_at = Some(Instant::now() - Duration::from_secs(1));
+            }
+        }
         crate::store::purge_expired(&store);
         let ttl_resp = handle_line("{\"cmd\":\"TTL\",\"key\":\"a\"}", &store);
         assert_eq!(ttl_resp.ttl, Some(-2));
+    }
+
+    #[test]
+    fn incr_and_decr() {
+        let store = new_store();
+        let resp = handle_line("{\"cmd\":\"INCR\",\"key\":\"c\"}", &store);
+        assert_eq!(resp.value, Some(Value::Number(1.into())));
+        let resp = handle_line("{\"cmd\":\"DECR\",\"key\":\"c\"}", &store);
+        assert_eq!(resp.value, Some(Value::Number(0.into())));
+    }
+
+    #[test]
+    fn incr_invalid_number() {
+        let store = new_store();
+        let _ = handle_line("{\"cmd\":\"SET\",\"key\":\"n\",\"value\":\"abc\"}", &store);
+        let resp = handle_line("{\"cmd\":\"INCR\",\"key\":\"n\"}", &store);
+        assert_eq!(resp.status, "error");
+        assert_eq!(resp.message.as_deref(), Some("not an integer"));
     }
 }
