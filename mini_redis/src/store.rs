@@ -23,3 +23,8 @@ pub fn del(store: &Store, key: &str) -> u64 {
     guard.remove(key).map(|_| 1).unwrap_or(0)
 
 }
+
+pub fn keys(store: &Store) -> Vec<String> {
+    let guard = store.lock().expect("store poisoned");
+    guard.keys().cloned().collect()
+}

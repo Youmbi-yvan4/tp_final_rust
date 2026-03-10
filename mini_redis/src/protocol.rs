@@ -7,6 +7,7 @@ pub enum Request {
     Get { key: String },
     Set { key: String, value: String },
     Del { key: String },
+    Keys,
 }
 
 #[derive(Debug, PartialEq)]
@@ -23,6 +24,8 @@ pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub keys: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
@@ -32,6 +35,7 @@ impl Response {
             status: "ok",
             value: None,
             count: None,
+            keys: None,
             message: None,
         }
     }
@@ -41,6 +45,7 @@ impl Response {
             status: "error",
             value: None,
             count: None,
+            keys: None,
             message: Some(message.into()),
         }
     }
@@ -84,6 +89,7 @@ pub fn parse_request(line: &str) -> Result<Request, RequestParseError> {
                 .to_string();
             Ok(Request::Del { key })
         }
+        "KEYS" => Ok(Request::Keys),
         _ => Err(RequestParseError::UnknownCommand),
     }
 }

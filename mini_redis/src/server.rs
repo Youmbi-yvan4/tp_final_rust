@@ -1,5 +1,5 @@
 use crate::protocol::{parse_request, serialize_response, Request, RequestParseError, Response};
-use crate::store::{del, get, new_store, set, Store};
+use crate::store::{del, get, keys, new_store, set, Store};
 use serde_json::Value;
 use std::error::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -61,6 +61,10 @@ fn handle_line(line: &str, store: &Store) -> Response {
             count: Some(del(store, &key)),
             ..Response::ok()
         },
+        Ok(Request::Keys) => Response {
+            keys: Some(keys(store)),
+            ..Response::ok()
+        },
         Err(RequestParseError::InvalidJson) => Response::error("invalid json"),
         Err(RequestParseError::UnknownCommand) => Response::error("unknown command"),
     }
@@ -113,5 +117,16 @@ mod tests {
         assert_eq!(resp.count, Some(1));
         let resp = handle_line("{\"cmd\":\"GET\",\"key\":\"a\"}", &store);
         assert_eq!(resp.value, Some(Value::Null));
+    }
+
+    #[test]
+    fn keys_lists_all() {
+        let store = new_store();
+        let _ = handle_line("{\"cmd\":\"SET\",\"key\":\"a\",\"value\":\"1\"}", &store);
+        let _ = handle_line("{\"cmd\":\"SET\",\"key\":\"b\",\"value\":\"2\"}", &store);
+        let resp = handle_line("{\"cmd\":\"KEYS\"}", &store);
+        let mut returned = resp.keys.clone().unwrap_or_default();
+        returned.sort();
+        assert_eq!(returned, vec!["a".to_string(), "b".to_string()]);
     }
 }
