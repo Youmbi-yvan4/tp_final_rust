@@ -12,6 +12,7 @@ pub enum Request {
     Ttl { key: String },
     Incr { key: String },
     Decr { key: String },
+    Save,
 }
 
 #[derive(Debug, PartialEq)]
@@ -134,6 +135,7 @@ pub fn parse_request(line: &str) -> Result<Request, RequestParseError> {
                 .to_string();
             Ok(Request::Decr { key })
         }
+        "SAVE" => Ok(Request::Save),
         _ => Err(RequestParseError::UnknownCommand),
     }
 }

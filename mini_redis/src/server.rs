@@ -1,7 +1,8 @@
 use crate::protocol::{parse_request, serialize_response, Request, RequestParseError, Response};
-use crate::store::{del, expire, get, incr, keys, new_store, purge_expired, set, ttl, Store};
+use crate::store::{del, expire, get, incr, keys, new_store, purge_expired, set, snapshot, ttl, Store};
 use serde_json::Value;
 use std::error::Error;
+use std::fs;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{self, Duration};
@@ -89,9 +90,19 @@ fn handle_line(line: &str, store: &Store) -> Response {
             },
             Err(msg) => Response::error(msg),
         },
+        Ok(Request::Save) => match save_dump(store) {
+            Ok(_) => Response::ok(),
+            Err(msg) => Response::error(msg),
+        },
         Err(RequestParseError::InvalidJson) => Response::error("invalid json"),
         Err(RequestParseError::UnknownCommand) => Response::error("unknown command"),
     }
+}
+
+fn save_dump(store: &Store) -> Result<(), String> {
+    let data = snapshot(store);
+    let serialized = serde_json::to_vec_pretty(&data).map_err(|e| e.to_string())?;
+    fs::write("dump.json", serialized).map_err(|e| e.to_string())
 }
 
 async fn clean_expired(store: Store) {
@@ -200,5 +211,12 @@ mod tests {
         let resp = handle_line("{\"cmd\":\"INCR\",\"key\":\"n\"}", &store);
         assert_eq!(resp.status, "error");
         assert_eq!(resp.message.as_deref(), Some("not an integer"));
+    }
+
+    #[test]
+    fn save_ok() {
+        let store = new_store();
+        let resp = handle_line("{\"cmd\":\"SAVE\"}", &store);
+        assert_eq!(resp.status, "ok");
     }
 }

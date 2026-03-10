@@ -97,6 +97,15 @@ pub fn purge_expired(store: &Store) {
     purge_expired_locked(&mut guard);
 }
 
+pub fn snapshot(store: &Store) -> HashMap<String, String> {
+    let mut guard = store.lock().expect("store poisoned");
+    purge_expired_locked(&mut guard);
+    guard
+        .iter()
+        .map(|(k, v)| (k.clone(), v.value.clone()))
+        .collect()
+}
+
 fn purge_expired_locked(guard: &mut HashMap<String, Entry>) {
     let now = Instant::now();
     guard.retain(|_, entry| match entry.expires_at {
