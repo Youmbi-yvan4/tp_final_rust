@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -35,7 +36,6 @@ pub fn del(store: &Store, key: &str) -> u64 {
     let mut guard = store.lock().expect("store poisoned");
     purge_expired_locked(&mut guard);
     guard.remove(key).map(|_| 1).unwrap_or(0)
-
 }
 
 pub fn keys(store: &Store) -> Vec<String> {
@@ -44,7 +44,7 @@ pub fn keys(store: &Store) -> Vec<String> {
     guard.keys().cloned().collect()
 }
 
-pub fn incr(store: &Store, key: &str, delta: i64) -> Result<i64, &'static str> {
+pub fn incr(store: &Store, key: &str, delta: i64) -> Result<i64, AppError> {
     let mut guard = store.lock().expect("store poisoned");
     purge_expired_locked(&mut guard);
 
@@ -53,7 +53,7 @@ pub fn incr(store: &Store, key: &str, delta: i64) -> Result<i64, &'static str> {
         None => ("0".to_string(), None),
     };
 
-    let current_val: i64 = current_str.parse().map_err(|_| "not an integer")?;
+    let current_val: i64 = current_str.parse().map_err(|_| AppError::NotInteger)?;
     let new_val = current_val.saturating_add(delta);
     guard.insert(
         key.to_string(),

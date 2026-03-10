@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::protocol::{parse_request, serialize_response, Request, RequestParseError, Response};
 use crate::store::{del, expire, get, incr, keys, new_store, purge_expired, set, snapshot, ttl, Store};
 use serde_json::Value;
@@ -81,28 +82,29 @@ fn handle_line(line: &str, store: &Store) -> Response {
                 value: Some(Value::Number(val.into())),
                 ..Response::ok()
             },
-            Err(msg) => Response::error(msg),
+            Err(err) => Response::error(err.to_string()),
         },
         Ok(Request::Decr { key }) => match incr(store, &key, -1) {
             Ok(val) => Response {
                 value: Some(Value::Number(val.into())),
                 ..Response::ok()
             },
-            Err(msg) => Response::error(msg),
+            Err(err) => Response::error(err.to_string()),
         },
         Ok(Request::Save) => match save_dump(store) {
             Ok(_) => Response::ok(),
-            Err(msg) => Response::error(msg),
+            Err(err) => Response::error(err.to_string()),
         },
         Err(RequestParseError::InvalidJson) => Response::error("invalid json"),
         Err(RequestParseError::UnknownCommand) => Response::error("unknown command"),
     }
 }
 
-fn save_dump(store: &Store) -> Result<(), String> {
+fn save_dump(store: &Store) -> Result<(), AppError> {
     let data = snapshot(store);
-    let serialized = serde_json::to_vec_pretty(&data).map_err(|e| e.to_string())?;
-    fs::write("dump.json", serialized).map_err(|e| e.to_string())
+    let serialized = serde_json::to_vec_pretty(&data)?;
+    fs::write("dump.json", serialized)?;
+    Ok(())
 }
 
 async fn clean_expired(store: Store) {
